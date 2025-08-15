@@ -28,20 +28,19 @@ async function getDb(): Promise<Db> {
   return client.db(DB_NAME);
 }
 
-/**
- * REVENUE
- * Use aggregation + $project so the result type is exactly Revenue (no _id),
- * avoiding the WithId<Document>[] → Revenue[] cast error in strict builds.
- */
+/* =========================
+   REVENUE
+   ========================= */
 export async function fetchRevenue(): Promise<Revenue[]> {
   try {
     const db = await getDb();
+
+    // Project away _id and return exactly the Revenue shape
     const data = await db
       .collection('revenue')
-      .aggregate<Revenue>([
-        { $project: { _id: 0, month: 1, revenue: 1 } },
-      ])
+      .aggregate<Revenue>([{ $project: { _id: 0, month: 1, revenue: 1 } }])
       .toArray();
+
     return data;
   } catch (error) {
     console.error('Database Error:', error);
@@ -49,17 +48,16 @@ export async function fetchRevenue(): Promise<Revenue[]> {
   }
 }
 
-/**
- * LATEST INVOICES
- * Get 5 most recent invoices and join customer info.
- */
+/* =========================
+   LATEST INVOICES (top 5)
+   ========================= */
 export async function fetchLatestInvoices(): Promise<LatestInvoiceRaw[]> {
   try {
     const db = await getDb();
 
     type LatestInvoiceAgg = {
       id: string;
-      amount: number;
+      amount: number; // cents
       name: string;
       image_url: string;
       email: string;
@@ -83,7 +81,7 @@ export async function fetchLatestInvoices(): Promise<LatestInvoiceRaw[]> {
           $project: {
             _id: 0,
             id: '$_id',
-            amount: 1, // number (in cents)
+            amount: 1,
             name: '$customer.name',
             image_url: '$customer.image_url',
             email: '$customer.email',
@@ -92,7 +90,7 @@ export async function fetchLatestInvoices(): Promise<LatestInvoiceRaw[]> {
       ])
       .toArray();
 
-    // Convert amount to formatted currency string for UI parity with SQL version
+    // Keep parity with SQL version: format amount for UI
     const latestInvoices: LatestInvoiceRaw[] = raw.map((inv) => ({
       ...inv,
       amount: formatCurrency(inv.amount),
@@ -105,12 +103,9 @@ export async function fetchLatestInvoices(): Promise<LatestInvoiceRaw[]> {
   }
 }
 
-/**
- * CARD DATA
- * - total invoices
- * - total customers
- * - sums by status (paid/pending)
- */
+/* =========================
+   CARD DATA
+   ========================= */
 export async function fetchCardData() {
   try {
     const db = await getDb();
@@ -153,10 +148,9 @@ export async function fetchCardData() {
 
 const ITEMS_PER_PAGE = 6;
 
-/**
- * FILTERED INVOICES (paginated)
- * Matches name/email/status and stringified amount/date (like SQL ILIKE).
- */
+/* =========================
+   FILTERED INVOICES (paginated)
+   ========================= */
 export async function fetchFilteredInvoices(
   query: string,
   currentPage: number,
@@ -222,9 +216,9 @@ export async function fetchFilteredInvoices(
   }
 }
 
-/**
- * TOTAL PAGES for filtered invoices
- */
+/* =========================
+   TOTAL PAGES for filtered invoices
+   ========================= */
 export async function fetchInvoicesPages(query: string): Promise<number> {
   try {
     const db = await getDb();
@@ -273,24 +267,30 @@ export async function fetchInvoicesPages(query: string): Promise<number> {
   }
 }
 
-/**
- * INVOICE BY ID (form)
- * Converts amount from cents → dollars for the form.
- */
+/* =========================
+   INVOICE BY ID (form)
+   ========================= */
 export async function fetchInvoiceById(id: string): Promise<InvoiceForm | undefined> {
   try {
     const db = await getDb();
+
+    // Read from DB with status as string, then narrow to 'paid' | 'pending'
     const doc = await db
       .collection<{ _id: string; customer_id: string; amount: number; status: string }>('invoices')
       .findOne({ _id: id }, { projection: { _id: 1, customer_id: 1, amount: 1, status: 1 } });
 
     if (!doc) return undefined;
 
+    // Narrow the string to the union type expected by InvoiceForm
+    type Status = InvoiceForm['status']; // 'paid' | 'pending'
+    const narrowedStatus: Status =
+      doc.status === 'paid' || doc.status === 'pending' ? (doc.status as Status) : 'pending';
+
     const invoice: InvoiceForm = {
       id: doc._id,
       customer_id: doc.customer_id,
-      amount: doc.amount / 100,
-      status: doc.status,
+      amount: doc.amount / 100, // convert cents to dollars for the form
+      status: narrowedStatus,
     };
 
     return invoice;
@@ -300,9 +300,9 @@ export async function fetchInvoiceById(id: string): Promise<InvoiceForm | undefi
   }
 }
 
-/**
- * CUSTOMERS (id + name)
- */
+/* =========================
+   CUSTOMERS (id + name)
+   ========================= */
 export async function fetchCustomers(): Promise<CustomerField[]> {
   try {
     const db = await getDb();
@@ -320,9 +320,9 @@ export async function fetchCustomers(): Promise<CustomerField[]> {
   }
 }
 
-/**
- * FILTERED CUSTOMERS TABLE (with totals)
- */
+/* =========================
+   FILTERED CUSTOMERS TABLE
+   ========================= */
 export async function fetchFilteredCustomers(query: string): Promise<CustomersTableType[]> {
   try {
     const db = await getDb();
