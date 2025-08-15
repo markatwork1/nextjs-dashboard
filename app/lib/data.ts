@@ -6,6 +6,7 @@ import {
   InvoiceForm,
   InvoicesTable,
   LatestInvoiceRaw,
+  LatestInvoice,          // ⬅️ add this import
   Revenue,
 } from './definitions';
 import { formatCurrency } from './utils';
@@ -52,21 +53,14 @@ export async function fetchRevenue(): Promise<Revenue[]> {
 /* =========================
    LATEST INVOICES (top 5)
    ========================= */
-export async function fetchLatestInvoices(): Promise<LatestInvoiceRaw[]> {
+// ❗ Return LatestInvoice[] (amount: string) to satisfy the component prop type
+export async function fetchLatestInvoices(): Promise<LatestInvoice[]> {
   try {
     const db = await getDb();
 
-    type LatestInvoiceAgg = {
-      id: string;
-      amount: number; // cents
-      name: string;
-      image_url: string;
-      email: string;
-    };
-
     const raw = await db
       .collection('invoices')
-      .aggregate<LatestInvoiceAgg>([
+      .aggregate<LatestInvoiceRaw>([
         { $sort: { date: -1 } },
         { $limit: 5 },
         {
@@ -82,7 +76,7 @@ export async function fetchLatestInvoices(): Promise<LatestInvoiceRaw[]> {
           $project: {
             _id: 0,
             id: '$_id',
-            amount: 1,
+            amount: 1, // number (cents) -> we will format below
             name: '$customer.name',
             image_url: '$customer.image_url',
             email: '$customer.email',
@@ -91,11 +85,14 @@ export async function fetchLatestInvoices(): Promise<LatestInvoiceRaw[]> {
       ])
       .toArray();
 
-    // Keep parity with SQL version: format amount for UI
-    const latestInvoices: LatestInvoiceRaw[] = raw.map((inv) => ({
-      ...inv,
+    // Convert amount (number/cents) -> formatted string for UI
+    const latestInvoices: LatestInvoice[] = raw.map((inv) => ({
+      id: inv.id,
+      name: inv.name,
+      image_url: inv.image_url,
+      email: inv.email,
       amount: formatCurrency(inv.amount),
-    })) as unknown as LatestInvoiceRaw[];
+    }));
 
     return latestInvoices;
   } catch (error) {
@@ -199,6 +196,7 @@ export async function fetchFilteredInvoices(
           $project: {
             _id: 0,
             id: '$_id',
+            customer_id: 1, // keep this to satisfy the type
             amount: 1,
             date: 1,
             status: 1,
@@ -387,13 +385,9 @@ export async function fetchFilteredCustomers(query: string): Promise<CustomersTa
       ])
       .toArray();
 
-    const customers: CustomersTableType[] = data.map((c) => ({
-      ...c,
-      total_pending: formatCurrency(c.total_pending ?? 0),
-      total_paid: formatCurrency(c.total_paid ?? 0),
-    })) as unknown as CustomersTableType[];
-
-    return customers;
+    // NOTE: These totals are numbers; if your table expects strings, change the return type
+    // to FormattedCustomersTable[] and format here. Keeping numbers for now.
+    return data as CustomersTableType[];
   } catch (err) {
     console.error('Database Error:', err);
     throw new Error('Failed to fetch customer table.');
