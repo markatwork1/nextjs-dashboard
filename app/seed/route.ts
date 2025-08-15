@@ -31,7 +31,7 @@ async function seedUsers(db: Db) {
   const col = db.collection('users');
   await Promise.all(
     users.map(async (u) => {
-      const _id = u.id ?? u.email; // use provided id or email as _id
+      const _id: string = u.id ?? u.email; // explicitly type as string
       const hashed = await bcrypt.hash(u.password, 10);
       return col.updateOne(
         { _id },
