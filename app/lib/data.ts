@@ -33,12 +33,15 @@ async function getDb(): Promise<Db> {
    ========================= */
 export async function fetchRevenue(): Promise<Revenue[]> {
   try {
+    console.log('Fetching revenue data...');
+    await new Promise((resolve) => setTimeout(resolve, 3000));
     const db = await getDb();
     // Project to the exact shape of Revenue so TS doesn't infer WithId<Document>
     const data = await db
       .collection('revenue')
       .aggregate<Revenue>([{ $project: { _id: 0, month: 1, revenue: 1 } }])
       .toArray();
+    console.log('Data fetch completed after 3 seconds.');
     return data;
   } catch (error) {
     console.error('Database Error:', error);

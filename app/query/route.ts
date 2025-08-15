@@ -20,15 +20,15 @@ const clientPromise =
   global._mongoClientPromise ??
   (global._mongoClientPromise = new MongoClient(MONGODB_URI).connect());
 
-async function listInvoices(amountFilter: number) {
+async function listInvoices() {
   const client = await clientPromise;
   const db = client.db(DB_NAME);
 
-  // Join invoices -> customers and return amount + customer name
+  // Join invoices -> customers and return amount + customer name where amount = 666
   return db
     .collection('invoices')
     .aggregate([
-      { $match: { amount: amountFilter } },
+      { $match: { amount: 666 } },
       {
         $lookup: {
           from: 'customers',
@@ -43,19 +43,9 @@ async function listInvoices(amountFilter: number) {
     .toArray();
 }
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const url = new URL(request.url);
-    const amountParam = url.searchParams.get('amount');
-
-    // Default to 666 to preserve the original query test
-    const amount = amountParam !== null ? Number(amountParam) : 666;
-
-    if (!Number.isFinite(amount)) {
-      return Response.json({ error: 'Invalid amount query parameter' }, { status: 400 });
-    }
-
-    const data = await listInvoices(amount);
+    const data = await listInvoices();
     return Response.json(data);
   } catch (error: any) {
     console.error('Query failed:', error);
