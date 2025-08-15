@@ -88,6 +88,7 @@ export async function fetchLatestInvoices(): Promise<LatestInvoiceRaw[]> {
       ])
       .toArray();
 
+    // Keep parity with SQL version: format amount for UI
     const latestInvoices: LatestInvoiceRaw[] = raw.map((inv) => ({
       ...inv,
       amount: formatCurrency(inv.amount),
@@ -271,25 +272,22 @@ export async function fetchInvoiceById(id: string): Promise<InvoiceForm | undefi
   try {
     const db = await getDb();
 
-    // Strongly type the collection so status is the correct union type
-    type InvoiceDoc = {
-      _id: string;
-      customer_id: string;
-      amount: number; // cents
-      status: 'paid' | 'pending';
-    };
-
+    // Read from DB with status as string (Mongo doesn't enforce unions), then NARROW it.
     const doc = await db
-      .collection<InvoiceDoc>('invoices')
+      .collection<{ _id: string; customer_id: string; amount: number; status: string }>('invoices')
       .findOne({ _id: id }, { projection: { _id: 1, customer_id: 1, amount: 1, status: 1 } });
 
     if (!doc) return undefined;
+
+    // Narrow string → 'paid' | 'pending' (fallback to 'pending' if unexpected)
+    const narrowedStatus: InvoiceForm['status'] =
+      doc.status === 'paid' || doc.status === 'pending' ? doc.status : 'pending';
 
     const invoice: InvoiceForm = {
       id: doc._id,
       customer_id: doc.customer_id,
       amount: doc.amount / 100, // convert cents to dollars for the form
-      status: doc.status,       // now correctly typed as 'paid' | 'pending'
+      status: narrowedStatus,
     };
 
     return invoice;
