@@ -1,26 +1,54 @@
-// import postgres from 'postgres';
+// app/query/route.ts
+import { MongoClient } from 'mongodb';
 
-// const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
+export const runtime = 'nodejs'; // Mongo driver requires Node runtime
 
-// async function listInvoices() {
-// 	const data = await sql`
-//     SELECT invoices.amount, customers.name
-//     FROM invoices
-//     JOIN customers ON invoices.customer_id = customers.id
-//     WHERE invoices.amount = 666;
-//   `;
+const MONGODB_URI = process.env.MONGODB_URI!;
+const DB_NAME = process.env.MONGODB_DB || 'nextjs_dashboard';
 
-// 	return data;
-// }
+if (!MONGODB_URI) {
+  throw new Error('MONGODB_URI is not set in .env.local');
+}
+
+// Reuse the client across hot reloads in dev
+declare global {
+  // eslint-disable-next-line no-var
+  var _mongoClientPromise: Promise<MongoClient> | undefined;
+}
+
+const clientPromise =
+  global._mongoClientPromise ??
+  (global._mongoClientPromise = new MongoClient(MONGODB_URI).connect());
+
+async function listInvoices() {
+  const client = await clientPromise;
+  const db = client.db(DB_NAME);
+
+  // Join invoices -> customers and return amount + customer name where amount = 666
+  return db
+    .collection('invoices')
+    .aggregate([
+      { $match: { amount: 666 } },
+      {
+        $lookup: {
+          from: 'customers',
+          localField: 'customer_id', // invoices.customer_id
+          foreignField: '_id',       // customers._id
+          as: 'customer',
+        },
+      },
+      { $unwind: '$customer' },
+      { $project: { _id: 0, amount: 1, name: '$customer.name' } },
+    ])
+    .toArray();
+}
 
 export async function GET() {
-  return Response.json({
-    message:
-      'Uncomment this file and remove this line. You can delete this file when you are finished.',
-  });
-  // try {
-  // 	return Response.json(await listInvoices());
-  // } catch (error) {
-  // 	return Response.json({ error }, { status: 500 });
-  // }
+  try {
+    const data = await listInvoices();
+    return Response.json(data);
+  } catch (error: any) {
+    console.error('Query failed:', error);
+    return Response.json({ error: error?.message ?? String(error) }, { status: 500 });
+  }
 }

@@ -1,117 +1,122 @@
+// app/seed/route.ts
 import bcrypt from 'bcrypt';
-import postgres from 'postgres';
+import { MongoClient, Db } from 'mongodb';
 import { invoices, customers, revenue, users } from '../lib/placeholder-data';
 
-const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
+export const runtime = 'nodejs'; // Mongo driver needs Node runtime (not Edge)
 
-async function seedUsers() {
-  await sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
-  await sql`
-    CREATE TABLE IF NOT EXISTS users (
-      id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      password TEXT NOT NULL
-    );
-  `;
+const MONGODB_URI = process.env.MONGODB_URI!;
+const DB_NAME = process.env.MONGODB_DB || 'nextjs_dashboard';
+if (!MONGODB_URI) throw new Error('MONGODB_URI is not set in .env.local');
 
-  const insertedUsers = await Promise.all(
-    users.map(async (user) => {
-      const hashedPassword = await bcrypt.hash(user.password, 10);
-      return sql`
-        INSERT INTO users (id, name, email, password)
-        VALUES (${user.id}, ${user.name}, ${user.email}, ${hashedPassword})
-        ON CONFLICT (id) DO NOTHING;
-      `;
-    }),
-  );
+// Reuse connection across hot reloads in dev
+declare global {
+  // eslint-disable-next-line no-var
+  var _mongoClientPromise: Promise<MongoClient> | undefined;
+}
+const clientPromise =
+  global._mongoClientPromise ??
+  (global._mongoClientPromise = new MongoClient(MONGODB_URI).connect());
 
-  return insertedUsers;
+async function ensureIndexes(db: Db) {
+  await Promise.all([
+    db.collection('users').createIndex({ email: 1 }, { unique: true }),
+    db.collection('customers').createIndex({ email: 1 }),
+    db.collection('invoices').createIndex({ customer_id: 1 }),
+    db.collection('revenue').createIndex({ month: 1 }, { unique: true }),
+  ]);
 }
 
-async function seedInvoices() {
-  await sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS invoices (
-      id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-      customer_id UUID NOT NULL,
-      amount INT NOT NULL,
-      status VARCHAR(255) NOT NULL,
-      date DATE NOT NULL
-    );
-  `;
-
-  const insertedInvoices = await Promise.all(
-    invoices.map(
-      (invoice) => sql`
-        INSERT INTO invoices (customer_id, amount, status, date)
-        VALUES (${invoice.customer_id}, ${invoice.amount}, ${invoice.status}, ${invoice.date})
-        ON CONFLICT (id) DO NOTHING;
-      `,
-    ),
+async function seedUsers(db: Db) {
+  const col = db.collection('users');
+  await Promise.all(
+    users.map(async (u) => {
+      const _id = u.id ?? u.email; // use provided id or email as _id
+      const hashed = await bcrypt.hash(u.password, 10);
+      return col.updateOne(
+        { _id },
+        {
+          $setOnInsert: {
+            _id,
+            name: u.name,
+            email: u.email,
+            password: hashed,
+          },
+        },
+        { upsert: true }
+      );
+    })
   );
-
-  return insertedInvoices;
 }
 
-async function seedCustomers() {
-  await sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS customers (
-      id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      email VARCHAR(255) NOT NULL,
-      image_url VARCHAR(255) NOT NULL
-    );
-  `;
-
-  const insertedCustomers = await Promise.all(
-    customers.map(
-      (customer) => sql`
-        INSERT INTO customers (id, name, email, image_url)
-        VALUES (${customer.id}, ${customer.name}, ${customer.email}, ${customer.image_url})
-        ON CONFLICT (id) DO NOTHING;
-      `,
-    ),
+async function seedCustomers(db: Db) {
+  const col = db.collection('customers');
+  await Promise.all(
+    customers.map((c) =>
+      col.updateOne(
+        { _id: c.id },
+        {
+          $setOnInsert: {
+            _id: c.id,
+            name: c.name,
+            email: c.email,
+            image_url: c.image_url,
+          },
+        },
+        { upsert: true }
+      )
+    )
   );
-
-  return insertedCustomers;
 }
 
-async function seedRevenue() {
-  await sql`
-    CREATE TABLE IF NOT EXISTS revenue (
-      month VARCHAR(4) NOT NULL UNIQUE,
-      revenue INT NOT NULL
-    );
-  `;
-
-  const insertedRevenue = await Promise.all(
-    revenue.map(
-      (rev) => sql`
-        INSERT INTO revenue (month, revenue)
-        VALUES (${rev.month}, ${rev.revenue})
-        ON CONFLICT (month) DO NOTHING;
-      `,
-    ),
+async function seedInvoices(db: Db) {
+  const col = db.collection('invoices');
+  await Promise.all(
+    invoices.map((inv) =>
+      col.updateOne(
+        { _id: inv.id ?? `${inv.customer_id}-${inv.date}` },
+        {
+          $setOnInsert: {
+            _id: inv.id ?? `${inv.customer_id}-${inv.date}`,
+            customer_id: inv.customer_id,
+            amount: inv.amount,
+            status: inv.status,
+            date: new Date(inv.date),
+          },
+        },
+        { upsert: true }
+      )
+    )
   );
+}
 
-  return insertedRevenue;
+async function seedRevenue(db: Db) {
+  const col = db.collection('revenue');
+  await Promise.all(
+    revenue.map((r) =>
+      col.updateOne(
+        { month: r.month },
+        { $setOnInsert: { month: r.month, revenue: r.revenue } },
+        { upsert: true }
+      )
+    )
+  );
 }
 
 export async function GET() {
   try {
-    const result = await sql.begin((sql) => [
-      seedUsers(),
-      seedCustomers(),
-      seedInvoices(),
-      seedRevenue(),
-    ]);
+    const client = await clientPromise;
+    const db = client.db(DB_NAME);
 
-    return Response.json({ message: 'Database seeded successfully' });
-  } catch (error) {
-    return Response.json({ error }, { status: 500 });
+    await ensureIndexes(db);
+    await seedUsers(db);
+    await seedCustomers(db);
+    await seedInvoices(db);
+    await seedRevenue(db);
+
+    return Response.json({ message: 'Database seeded successfully (MongoDB)' });
+  } catch (error: any) {
+    console.error('Seed failed:', error);
+    return Response.json({ error: error?.message ?? String(error) }, { status: 500 });
   }
 }
