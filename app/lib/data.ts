@@ -14,7 +14,7 @@ const MONGODB_URI = process.env.MONGODB_URI!;
 const DB_NAME = process.env.MONGODB_DB || 'nextjs_dashboard';
 if (!MONGODB_URI) throw new Error('MONGODB_URI is not set in .env.local');
 
-// Reuse a single Mongo client across hot reloads in dev
+// Reuse one Mongo client across hot reloads in dev
 declare global {
   // eslint-disable-next-line no-var
   var _mongoClientPromise: Promise<MongoClient> | undefined;
@@ -28,21 +28,36 @@ async function getDb(): Promise<Db> {
   return client.db(DB_NAME);
 }
 
+/**
+ * REVENUE
+ * Fixes the TS error by typing the collection and projecting out _id.
+ */
 export async function fetchRevenue() {
   try {
     const db = await getDb();
-    const data = (await db.collection('revenue').find({}).toArray()) as Revenue[];
-    return data;
+
+    // Type the collection to your shape and remove _id in the projection
+    const coll = db.collection<Revenue & { _id?: unknown }>('revenue');
+    const data = await coll
+      .find({}, { projection: { _id: 0, month: 1, revenue: 1 } })
+      .toArray();
+
+    return data as Revenue[];
   } catch (error) {
     console.error('Database Error:', error);
     throw new Error('Failed to fetch revenue data.');
   }
 }
 
+/**
+ * LATEST INVOICES
+ * Get 5 most recent invoices and join customer info.
+ */
 export async function fetchLatestInvoices() {
   try {
     const db = await getDb();
-    const data = (await db
+
+    const raw = await db
       .collection('invoices')
       .aggregate<LatestInvoiceRaw>([
         { $sort: { date: -1 } },
@@ -58,20 +73,22 @@ export async function fetchLatestInvoices() {
         { $unwind: '$customer' },
         {
           $project: {
-            amount: 1,
+            id: '$_id',
+            amount: 1, // number (in cents)
             name: '$customer.name',
             image_url: '$customer.image_url',
             email: '$customer.email',
-            id: '$_id',
           },
         },
       ])
-      .toArray()) as unknown as LatestInvoiceRaw[];
+      .toArray();
 
-    const latestInvoices = data.map((invoice) => ({
-      ...invoice,
-      amount: formatCurrency((invoice as any).amount),
+    // Format amount as currency string for UI, like the SQL version did
+    const latestInvoices = raw.map((inv) => ({
+      ...inv,
+      amount: formatCurrency(inv.amount),
     }));
+
     return latestInvoices;
   } catch (error) {
     console.error('Database Error:', error);
@@ -79,6 +96,12 @@ export async function fetchLatestInvoices() {
   }
 }
 
+/**
+ * CARD DATA
+ * - total invoices
+ * - total customers
+ * - sums by status (paid/pending)
+ */
 export async function fetchCardData() {
   try {
     const db = await getDb();
@@ -91,12 +114,8 @@ export async function fetchCardData() {
         {
           $group: {
             _id: null,
-            paid: {
-              $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] },
-            },
-            pending: {
-              $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] },
-            },
+            paid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
+            pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
           },
         },
       ])
@@ -124,6 +143,10 @@ export async function fetchCardData() {
 
 const ITEMS_PER_PAGE = 6;
 
+/**
+ * FILTERED INVOICES (paginated)
+ * Matches name/email/status and stringified amount/date (like the SQL ILIKE filters).
+ */
 export async function fetchFilteredInvoices(query: string, currentPage: number) {
   const skip = (currentPage - 1) * ITEMS_PER_PAGE;
 
@@ -141,7 +164,7 @@ export async function fetchFilteredInvoices(query: string, currentPage: number) 
         },
       },
       { $unwind: '$customer' },
-      // Prepare string versions for text matching against amount/date
+      // Prepare string versions to mimic ILIKE on amount/date
       {
         $addFields: {
           amountStr: { $toString: '$amount' },
@@ -173,12 +196,12 @@ export async function fetchFilteredInvoices(query: string, currentPage: number) 
           image_url: '$customer.image_url',
         },
       },
-    ];
+    ] as const;
 
-    const invoices = (await db
+    const invoices = await db
       .collection('invoices')
-      .aggregate<InvoicesTable>(pipeline)
-      .toArray()) as unknown as InvoicesTable[];
+      .aggregate<InvoicesTable>(pipeline as any)
+      .toArray();
 
     return invoices;
   } catch (error) {
@@ -187,6 +210,9 @@ export async function fetchFilteredInvoices(query: string, currentPage: number) 
   }
 }
 
+/**
+ * TOTAL PAGES for filtered invoices
+ */
 export async function fetchInvoicesPages(query: string) {
   try {
     const db = await getDb();
@@ -220,9 +246,9 @@ export async function fetchInvoicesPages(query: string) {
         },
       },
       { $count: 'count' },
-    ];
+    ] as const;
 
-    const res = await db.collection('invoices').aggregate(pipeline).toArray();
+    const res = await db.collection('invoices').aggregate<{ count: number }>(pipeline as any).toArray();
     const count = res[0]?.count ?? 0;
     const totalPages = Math.ceil(Number(count) / ITEMS_PER_PAGE);
     return totalPages;
@@ -232,16 +258,22 @@ export async function fetchInvoicesPages(query: string) {
   }
 }
 
+/**
+ * INVOICE BY ID (form)
+ * Converts amount from cents → dollars for the form.
+ */
 export async function fetchInvoiceById(id: string) {
   try {
     const db = await getDb();
-    const doc = (await db.collection('invoices').findOne({ _id: id })) as any;
+    const doc = await db.collection('invoices').findOne<{ _id: string; customer_id: string; amount: number; status: string; date?: Date }>({
+      _id: id,
+    });
     if (!doc) return undefined as unknown as InvoiceForm;
 
     const invoice: InvoiceForm = {
       id: doc._id,
       customer_id: doc.customer_id,
-      amount: doc.amount / 100, // convert cents to dollars for the form
+      amount: doc.amount / 100,
       status: doc.status,
     };
 
@@ -252,19 +284,19 @@ export async function fetchInvoiceById(id: string) {
   }
 }
 
+/**
+ * CUSTOMERS (id + name)
+ */
 export async function fetchCustomers() {
   try {
     const db = await getDb();
     const rows = await db
       .collection('customers')
-      .find({}, { projection: { _id: 1, name: 1 } })
+      .find<{ _id: string; name: string }>({}, { projection: { _id: 1, name: 1 } })
       .sort({ name: 1 })
       .toArray();
 
-    const customers: CustomerField[] = rows.map((r: any) => ({
-      id: r._id,
-      name: r.name,
-    }));
+    const customers: CustomerField[] = rows.map((r) => ({ id: r._id, name: r.name }));
     return customers;
   } catch (err) {
     console.error('Database Error:', err);
@@ -272,14 +304,25 @@ export async function fetchCustomers() {
   }
 }
 
+/**
+ * FILTERED CUSTOMERS TABLE (with totals)
+ */
 export async function fetchFilteredCustomers(query: string) {
   try {
     const db = await getDb();
     const regex = new RegExp(query, 'i');
 
-    const data = (await db
+    const data = await db
       .collection('customers')
-      .aggregate<CustomersTableType>([
+      .aggregate<{
+        id: string;
+        name: string;
+        email: string;
+        image_url: string;
+        total_invoices: number;
+        total_pending: number;
+        total_paid: number;
+      }>([
         { $match: { $or: [{ name: regex }, { email: regex }] } },
         {
           $lookup: {
@@ -325,13 +368,13 @@ export async function fetchFilteredCustomers(query: string) {
         },
         { $sort: { name: 1 } },
       ])
-      .toArray()) as unknown as CustomersTableType[];
+      .toArray();
 
-    const customers = data.map((customer: any) => ({
-      ...customer,
-      total_pending: formatCurrency(customer.total_pending ?? 0),
-      total_paid: formatCurrency(customer.total_paid ?? 0),
-    }));
+    const customers: CustomersTableType[] = data.map((c) => ({
+      ...c,
+      total_pending: formatCurrency(c.total_pending ?? 0),
+      total_paid: formatCurrency(c.total_paid ?? 0),
+    })) as unknown as CustomersTableType[];
 
     return customers;
   } catch (err) {
