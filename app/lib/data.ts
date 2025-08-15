@@ -30,19 +30,19 @@ async function getDb(): Promise<Db> {
 
 /**
  * REVENUE
- * Fixes the TS error by typing the collection and projecting out _id.
+ * Use aggregation + $project so the result type is exactly Revenue (no _id),
+ * avoiding the WithId<Document>[] → Revenue[] cast error in strict builds.
  */
-export async function fetchRevenue() {
+export async function fetchRevenue(): Promise<Revenue[]> {
   try {
     const db = await getDb();
-
-    // Type the collection to your shape and remove _id in the projection
-    const coll = db.collection<Revenue & { _id?: unknown }>('revenue');
-    const data = await coll
-      .find({}, { projection: { _id: 0, month: 1, revenue: 1 } })
+    const data = await db
+      .collection('revenue')
+      .aggregate<Revenue>([
+        { $project: { _id: 0, month: 1, revenue: 1 } },
+      ])
       .toArray();
-
-    return data as Revenue[];
+    return data;
   } catch (error) {
     console.error('Database Error:', error);
     throw new Error('Failed to fetch revenue data.');
@@ -53,13 +53,21 @@ export async function fetchRevenue() {
  * LATEST INVOICES
  * Get 5 most recent invoices and join customer info.
  */
-export async function fetchLatestInvoices() {
+export async function fetchLatestInvoices(): Promise<LatestInvoiceRaw[]> {
   try {
     const db = await getDb();
 
+    type LatestInvoiceAgg = {
+      id: string;
+      amount: number;
+      name: string;
+      image_url: string;
+      email: string;
+    };
+
     const raw = await db
       .collection('invoices')
-      .aggregate<LatestInvoiceRaw>([
+      .aggregate<LatestInvoiceAgg>([
         { $sort: { date: -1 } },
         { $limit: 5 },
         {
@@ -73,6 +81,7 @@ export async function fetchLatestInvoices() {
         { $unwind: '$customer' },
         {
           $project: {
+            _id: 0,
             id: '$_id',
             amount: 1, // number (in cents)
             name: '$customer.name',
@@ -83,11 +92,11 @@ export async function fetchLatestInvoices() {
       ])
       .toArray();
 
-    // Format amount as currency string for UI, like the SQL version did
-    const latestInvoices = raw.map((inv) => ({
+    // Convert amount to formatted currency string for UI parity with SQL version
+    const latestInvoices: LatestInvoiceRaw[] = raw.map((inv) => ({
       ...inv,
       amount: formatCurrency(inv.amount),
-    }));
+    })) as unknown as LatestInvoiceRaw[];
 
     return latestInvoices;
   } catch (error) {
@@ -118,6 +127,7 @@ export async function fetchCardData() {
             pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
           },
         },
+        { $project: { _id: 0, paid: 1, pending: 1 } },
       ])
       .toArray();
 
@@ -145,62 +155,64 @@ const ITEMS_PER_PAGE = 6;
 
 /**
  * FILTERED INVOICES (paginated)
- * Matches name/email/status and stringified amount/date (like the SQL ILIKE filters).
+ * Matches name/email/status and stringified amount/date (like SQL ILIKE).
  */
-export async function fetchFilteredInvoices(query: string, currentPage: number) {
+export async function fetchFilteredInvoices(
+  query: string,
+  currentPage: number,
+): Promise<InvoicesTable[]> {
   const skip = (currentPage - 1) * ITEMS_PER_PAGE;
 
   try {
     const db = await getDb();
     const regex = new RegExp(query, 'i');
 
-    const pipeline = [
-      {
-        $lookup: {
-          from: 'customers',
-          localField: 'customer_id',
-          foreignField: '_id',
-          as: 'customer',
-        },
-      },
-      { $unwind: '$customer' },
-      // Prepare string versions to mimic ILIKE on amount/date
-      {
-        $addFields: {
-          amountStr: { $toString: '$amount' },
-          dateStr: { $dateToString: { date: '$date', format: '%Y-%m-%d' } },
-        },
-      },
-      {
-        $match: {
-          $or: [
-            { 'customer.name': regex },
-            { 'customer.email': regex },
-            { status: regex },
-            { amountStr: regex },
-            { dateStr: regex },
-          ],
-        },
-      },
-      { $sort: { date: -1 } },
-      { $skip: skip },
-      { $limit: ITEMS_PER_PAGE },
-      {
-        $project: {
-          id: '$_id',
-          amount: 1,
-          date: 1,
-          status: 1,
-          name: '$customer.name',
-          email: '$customer.email',
-          image_url: '$customer.image_url',
-        },
-      },
-    ] as const;
-
     const invoices = await db
       .collection('invoices')
-      .aggregate<InvoicesTable>(pipeline as any)
+      .aggregate<InvoicesTable>([
+        {
+          $lookup: {
+            from: 'customers',
+            localField: 'customer_id',
+            foreignField: '_id',
+            as: 'customer',
+          },
+        },
+        { $unwind: '$customer' },
+        // Prepare string versions to mimic ILIKE on amount/date
+        {
+          $addFields: {
+            amountStr: { $toString: '$amount' },
+            dateStr: { $dateToString: { date: '$date', format: '%Y-%m-%d' } },
+          },
+        },
+        {
+          $match: {
+            $or: [
+              { 'customer.name': regex },
+              { 'customer.email': regex },
+              { status: regex },
+              { amountStr: regex },
+              { dateStr: regex },
+            ],
+          },
+        },
+        { $sort: { date: -1 } },
+        { $skip: skip },
+        { $limit: ITEMS_PER_PAGE },
+        {
+          $project: {
+            _id: 0,
+            id: '$_id',
+            amount: 1,
+            date: 1,
+            status: 1,
+            name: '$customer.name',
+            email: '$customer.email',
+            image_url: '$customer.image_url',
+          },
+        },
+      ])
       .toArray();
 
     return invoices;
@@ -213,42 +225,45 @@ export async function fetchFilteredInvoices(query: string, currentPage: number) 
 /**
  * TOTAL PAGES for filtered invoices
  */
-export async function fetchInvoicesPages(query: string) {
+export async function fetchInvoicesPages(query: string): Promise<number> {
   try {
     const db = await getDb();
     const regex = new RegExp(query, 'i');
 
-    const pipeline = [
-      {
-        $lookup: {
-          from: 'customers',
-          localField: 'customer_id',
-          foreignField: '_id',
-          as: 'customer',
+    const res = await db
+      .collection('invoices')
+      .aggregate<{ count: number }>([
+        {
+          $lookup: {
+            from: 'customers',
+            localField: 'customer_id',
+            foreignField: '_id',
+            as: 'customer',
+          },
         },
-      },
-      { $unwind: '$customer' },
-      {
-        $addFields: {
-          amountStr: { $toString: '$amount' },
-          dateStr: { $dateToString: { date: '$date', format: '%Y-%m-%d' } },
+        { $unwind: '$customer' },
+        {
+          $addFields: {
+            amountStr: { $toString: '$amount' },
+            dateStr: { $dateToString: { date: '$date', format: '%Y-%m-%d' } },
+          },
         },
-      },
-      {
-        $match: {
-          $or: [
-            { 'customer.name': regex },
-            { 'customer.email': regex },
-            { status: regex },
-            { amountStr: regex },
-            { dateStr: regex },
-          ],
+        {
+          $match: {
+            $or: [
+              { 'customer.name': regex },
+              { 'customer.email': regex },
+              { status: regex },
+              { amountStr: regex },
+              { dateStr: regex },
+            ],
+          },
         },
-      },
-      { $count: 'count' },
-    ] as const;
+        { $count: 'count' },
+        { $project: { _id: 0, count: 1 } },
+      ])
+      .toArray();
 
-    const res = await db.collection('invoices').aggregate<{ count: number }>(pipeline as any).toArray();
     const count = res[0]?.count ?? 0;
     const totalPages = Math.ceil(Number(count) / ITEMS_PER_PAGE);
     return totalPages;
@@ -262,13 +277,14 @@ export async function fetchInvoicesPages(query: string) {
  * INVOICE BY ID (form)
  * Converts amount from cents → dollars for the form.
  */
-export async function fetchInvoiceById(id: string) {
+export async function fetchInvoiceById(id: string): Promise<InvoiceForm | undefined> {
   try {
     const db = await getDb();
-    const doc = await db.collection('invoices').findOne<{ _id: string; customer_id: string; amount: number; status: string; date?: Date }>({
-      _id: id,
-    });
-    if (!doc) return undefined as unknown as InvoiceForm;
+    const doc = await db
+      .collection<{ _id: string; customer_id: string; amount: number; status: string }>('invoices')
+      .findOne({ _id: id }, { projection: { _id: 1, customer_id: 1, amount: 1, status: 1 } });
+
+    if (!doc) return undefined;
 
     const invoice: InvoiceForm = {
       id: doc._id,
@@ -287,12 +303,12 @@ export async function fetchInvoiceById(id: string) {
 /**
  * CUSTOMERS (id + name)
  */
-export async function fetchCustomers() {
+export async function fetchCustomers(): Promise<CustomerField[]> {
   try {
     const db = await getDb();
     const rows = await db
-      .collection('customers')
-      .find<{ _id: string; name: string }>({}, { projection: { _id: 1, name: 1 } })
+      .collection<{ _id: string; name: string }>('customers')
+      .find({}, { projection: { _id: 1, name: 1 } })
       .sort({ name: 1 })
       .toArray();
 
@@ -307,7 +323,7 @@ export async function fetchCustomers() {
 /**
  * FILTERED CUSTOMERS TABLE (with totals)
  */
-export async function fetchFilteredCustomers(query: string) {
+export async function fetchFilteredCustomers(query: string): Promise<CustomersTableType[]> {
   try {
     const db = await getDb();
     const regex = new RegExp(query, 'i');
@@ -357,6 +373,7 @@ export async function fetchFilteredCustomers(query: string) {
         },
         {
           $project: {
+            _id: 0,
             id: '$_id',
             name: 1,
             email: 1,
