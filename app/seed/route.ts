@@ -34,10 +34,10 @@ async function seedUsers(db: Db) {
       const _id: string = u.id ?? u.email; // explicitly type as string
       const hashed = await bcrypt.hash(u.password, 10);
       return col.updateOne(
-        { _id },
+        { _id: _id as any },
         {
           $setOnInsert: {
-            _id,
+            _id: _id as any,
             name: u.name,
             email: u.email,
             password: hashed,
@@ -54,10 +54,10 @@ async function seedCustomers(db: Db) {
   await Promise.all(
     customers.map((c) =>
       col.updateOne(
-        { _id: c.id },
+        { _id: c.id as any },
         {
           $setOnInsert: {
-            _id: c.id,
+            _id: c.id as any,
             name: c.name,
             email: c.email,
             image_url: c.image_url,
@@ -72,12 +72,13 @@ async function seedCustomers(db: Db) {
 async function seedInvoices(db: Db) {
   const col = db.collection('invoices');
   await Promise.all(
-    invoices.map((inv) =>
-      col.updateOne(
-        { _id: inv.id ?? `${inv.customer_id}-${inv.date}` },
+    invoices.map((inv: any) => {
+      const invoiceId = typeof inv.id !== 'undefined' ? inv.id : `${inv.customer_id}-${inv.date}`;
+      return col.updateOne(
+        { _id: invoiceId },
         {
           $setOnInsert: {
-            _id: inv.id ?? `${inv.customer_id}-${inv.date}`,
+            _id: invoiceId,
             customer_id: inv.customer_id,
             amount: inv.amount,
             status: inv.status,
@@ -85,8 +86,8 @@ async function seedInvoices(db: Db) {
           },
         },
         { upsert: true }
-      )
-    )
+      );
+    })
   );
 }
 
