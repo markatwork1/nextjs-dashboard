@@ -34,13 +34,11 @@ async function getDb(): Promise<Db> {
 export async function fetchRevenue(): Promise<Revenue[]> {
   try {
     const db = await getDb();
-
-    // Project away _id and return exactly the Revenue shape
+    // Project to the exact shape of Revenue so TS doesn't infer WithId<Document>
     const data = await db
       .collection('revenue')
       .aggregate<Revenue>([{ $project: { _id: 0, month: 1, revenue: 1 } }])
       .toArray();
-
     return data;
   } catch (error) {
     console.error('Database Error:', error);
@@ -90,7 +88,6 @@ export async function fetchLatestInvoices(): Promise<LatestInvoiceRaw[]> {
       ])
       .toArray();
 
-    // Keep parity with SQL version: format amount for UI
     const latestInvoices: LatestInvoiceRaw[] = raw.map((inv) => ({
       ...inv,
       amount: formatCurrency(inv.amount),
@@ -274,23 +271,25 @@ export async function fetchInvoiceById(id: string): Promise<InvoiceForm | undefi
   try {
     const db = await getDb();
 
-    // Read from DB with status as string, then narrow to 'paid' | 'pending'
+    // Strongly type the collection so status is the correct union type
+    type InvoiceDoc = {
+      _id: string;
+      customer_id: string;
+      amount: number; // cents
+      status: 'paid' | 'pending';
+    };
+
     const doc = await db
-      .collection<{ _id: string; customer_id: string; amount: number; status: string }>('invoices')
+      .collection<InvoiceDoc>('invoices')
       .findOne({ _id: id }, { projection: { _id: 1, customer_id: 1, amount: 1, status: 1 } });
 
     if (!doc) return undefined;
-
-    // Narrow the string to the union type expected by InvoiceForm
-    type Status = InvoiceForm['status']; // 'paid' | 'pending'
-    const narrowedStatus: Status =
-      doc.status === 'paid' || doc.status === 'pending' ? (doc.status as Status) : 'pending';
 
     const invoice: InvoiceForm = {
       id: doc._id,
       customer_id: doc.customer_id,
       amount: doc.amount / 100, // convert cents to dollars for the form
-      status: narrowedStatus,
+      status: doc.status,       // now correctly typed as 'paid' | 'pending'
     };
 
     return invoice;
