@@ -2,8 +2,8 @@
 import { MongoClient } from 'mongodb';
 
 export const runtime = 'nodejs'; // Mongo driver requires Node runtime
-
 const MONGODB_URI = process.env.MONGODB_URI!;
+// Removed stray 'p' character
 const DB_NAME = process.env.MONGODB_DB || 'nextjs_dashboard';
 
 if (!MONGODB_URI) {
