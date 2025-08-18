@@ -36,7 +36,7 @@ async function seedUsers(db: Db) {
       return col.updateOne(
         { _id: _id as any },
         {
-          $setOnInsert: {
+          $set: {
             _id: _id as any,
             name: u.name,
             email: u.email,
@@ -56,7 +56,7 @@ async function seedCustomers(db: Db) {
       col.updateOne(
         { _id: c.id as any },
         {
-          $setOnInsert: {
+          $set: {
             _id: c.id as any,
             name: c.name,
             email: c.email,
@@ -77,7 +77,7 @@ async function seedInvoices(db: Db) {
       return col.updateOne(
         { _id: invoiceId },
         {
-          $setOnInsert: {
+          $set: {
             _id: invoiceId,
             customer_id: inv.customer_id,
             amount: inv.amount,
@@ -97,7 +97,7 @@ async function seedRevenue(db: Db) {
     revenue.map((r) =>
       col.updateOne(
         { month: r.month },
-        { $setOnInsert: { month: r.month, revenue: r.revenue } },
+        { $set: { month: r.month, revenue: r.revenue } },
         { upsert: true }
       )
     )
