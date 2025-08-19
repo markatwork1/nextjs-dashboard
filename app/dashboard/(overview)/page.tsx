@@ -7,6 +7,9 @@ import { fetchCardData } from '@/app/lib/data';
 import { Suspense } from 'react';
 import { RevenueChartSkeleton, LatestInvoicesSkeleton, CardsSkeleton } from '@/app/ui/skeletons';
 
+// Force dynamic rendering to prevent build-time data fetching
+export const dynamic = 'force-dynamic';
+
 export default async function Page() {
   const {
     numberOfInvoices,

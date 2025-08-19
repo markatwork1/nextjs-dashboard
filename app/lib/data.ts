@@ -11,21 +11,37 @@ import {
 } from './definitions';
 import { formatCurrency } from './utils';
 
-const MONGODB_URI = process.env.MONGODB_URI!;
-const DB_NAME = process.env.MONGODB_DB || 'nextjs_dashboard';
-if (!MONGODB_URI) throw new Error('MONGODB_URI is not set in .env.local');
+// Lazy initialization to avoid build-time connection attempts
+function getMongoConfig() {
+  const MONGODB_URI = process.env.MONGODB_URI;
+  const DB_NAME = process.env.MONGODB_DB || 'nextjs_dashboard';
+  
+  if (!MONGODB_URI) {
+    throw new Error('MONGODB_URI is not set in .env.local');
+  }
+  
+  return { MONGODB_URI, DB_NAME };
+}
 
 // Reuse one Mongo client across hot reloads in dev
 declare global {
   // eslint-disable-next-line no-var
   var _mongoClientPromise: Promise<MongoClient> | undefined;
 }
-const clientPromise =
-  global._mongoClientPromise ??
-  (global._mongoClientPromise = new MongoClient(MONGODB_URI).connect());
+
+function getClientPromise() {
+  const { MONGODB_URI } = getMongoConfig();
+  
+  if (!global._mongoClientPromise) {
+    global._mongoClientPromise = new MongoClient(MONGODB_URI).connect();
+  }
+  
+  return global._mongoClientPromise;
+}
 
 async function getDb(): Promise<Db> {
-  const client = await clientPromise;
+  const { DB_NAME } = getMongoConfig();
+  const client = await getClientPromise();
   return client.db(DB_NAME);
 }
 

@@ -5,18 +5,33 @@ import { invoices, customers, revenue, users } from '../lib/placeholder-data';
 
 export const runtime = 'nodejs'; // Mongo driver needs Node runtime (not Edge)
 
-const MONGODB_URI = process.env.MONGODB_URI!;
-const DB_NAME = process.env.MONGODB_DB || 'nextjs_dashboard';
-if (!MONGODB_URI) throw new Error('MONGODB_URI is not set in .env.local');
+// Lazy initialization to avoid build-time connection attempts
+function getMongoConfig() {
+  const MONGODB_URI = process.env.MONGODB_URI;
+  const DB_NAME = process.env.MONGODB_DB || 'nextjs_dashboard';
+  
+  if (!MONGODB_URI) {
+    throw new Error('MONGODB_URI is not set in .env.local');
+  }
+  
+  return { MONGODB_URI, DB_NAME };
+}
 
 // Reuse connection across hot reloads in dev
 declare global {
   // eslint-disable-next-line no-var
   var _mongoClientPromise: Promise<MongoClient> | undefined;
 }
-const clientPromise =
-  global._mongoClientPromise ??
-  (global._mongoClientPromise = new MongoClient(MONGODB_URI).connect());
+
+function getClientPromise() {
+  const { MONGODB_URI } = getMongoConfig();
+  
+  if (!global._mongoClientPromise) {
+    global._mongoClientPromise = new MongoClient(MONGODB_URI).connect();
+  }
+  
+  return global._mongoClientPromise;
+}
 
 async function ensureIndexes(db: Db) {
   await Promise.all([
@@ -106,7 +121,8 @@ async function seedRevenue(db: Db) {
 
 export async function GET() {
   try {
-    const client = await clientPromise;
+    const { DB_NAME } = getMongoConfig();
+    const client = await getClientPromise();
     const db = client.db(DB_NAME);
 
     await ensureIndexes(db);

@@ -1,0 +1,19 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install --legacy-peer-deps",
+  "functions": {
+    "app/seed/route.ts": {
+      "maxDuration": 30
+    },
+    "app/query/route.ts": {
+      "maxDuration": 10
+    }
+  },
+  "env": {
+    "MONGODB_URI": "@mongodb_uri",
+    "MONGODB_DB": "@mongodb_db"
+  },
+  "regions": ["iad1"]
+}

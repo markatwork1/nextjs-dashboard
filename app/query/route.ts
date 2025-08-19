@@ -2,12 +2,17 @@
 import { MongoClient } from 'mongodb';
 
 export const runtime = 'nodejs'; // Mongo driver requires Node runtime
-const MONGODB_URI = process.env.MONGODB_URI!;
-// Removed stray 'p' character
-const DB_NAME = process.env.MONGODB_DB || 'nextjs_dashboard';
 
-if (!MONGODB_URI) {
-  throw new Error('MONGODB_URI is not set in .env.local');
+// Lazy initialization to avoid build-time connection attempts
+function getMongoConfig() {
+  const MONGODB_URI = process.env.MONGODB_URI;
+  const DB_NAME = process.env.MONGODB_DB || 'nextjs_dashboard';
+  
+  if (!MONGODB_URI) {
+    throw new Error('MONGODB_URI is not set in .env.local');
+  }
+  
+  return { MONGODB_URI, DB_NAME };
 }
 
 // Reuse the client across hot reloads in dev
@@ -16,12 +21,19 @@ declare global {
   var _mongoClientPromise: Promise<MongoClient> | undefined;
 }
 
-const clientPromise =
-  global._mongoClientPromise ??
-  (global._mongoClientPromise = new MongoClient(MONGODB_URI).connect());
+function getClientPromise() {
+  const { MONGODB_URI } = getMongoConfig();
+  
+  if (!global._mongoClientPromise) {
+    global._mongoClientPromise = new MongoClient(MONGODB_URI).connect();
+  }
+  
+  return global._mongoClientPromise;
+}
 
 async function listInvoices() {
-  const client = await clientPromise;
+  const { DB_NAME } = getMongoConfig();
+  const client = await getClientPromise();
   const db = client.db(DB_NAME);
 
   // Join invoices -> customers and return amount + customer name where amount = 666
