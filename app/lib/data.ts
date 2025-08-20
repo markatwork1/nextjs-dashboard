@@ -17,7 +17,7 @@ function getMongoConfig() {
   const DB_NAME = process.env.MONGODB_DB || 'nextjs_dashboard';
   
   if (!MONGODB_URI) {
-  throw new Error('MONGODB_URI environment variable is not set. Please set it in your local .env.local file for development, or in your deployment environment variables for production.');
+    throw new Error('MONGODB_URI is not set in .env.local');
   }
   
   return { MONGODB_URI, DB_NAME };
@@ -285,28 +285,30 @@ export async function fetchInvoicesPages(query: string): Promise<number> {
 /* =========================
    INVOICE BY ID (form)
    ========================= */
+import { ObjectId } from 'mongodb';
+
 export async function fetchInvoiceById(id: string): Promise<InvoiceForm | undefined> {
   try {
     const db = await getDb();
-
-    // Read from DB with status as string (Mongo doesn't enforce unions), then NARROW it.
-    const doc = await db
-      .collection<{ _id: string; customer_id: string; amount: number; status: string }>('invoices')
-      .findOne({ _id: id }, { projection: { _id: 1, customer_id: 1, amount: 1, status: 1 } });
-
+    let doc = null;
+    if (ObjectId.isValid(id)) {
+      doc = await db
+        .collection<{ _id: ObjectId; customer_id: string; amount: number; status: string }>('invoices')
+        .findOne({ _id: new ObjectId(id) }, { projection: { _id: 1, customer_id: 1, amount: 1, status: 1 } });
+    } else {
+      doc = await db
+        .collection<{ _id: string; customer_id: string; amount: number; status: string }>('invoices')
+        .findOne({ _id: id }, { projection: { _id: 1, customer_id: 1, amount: 1, status: 1 } });
+    }
     if (!doc) return undefined;
-
-    // Narrow string → 'paid' | 'pending' (fallback to 'pending' if unexpected)
     const narrowedStatus: InvoiceForm['status'] =
       doc.status === 'paid' || doc.status === 'pending' ? doc.status : 'pending';
-
     const invoice: InvoiceForm = {
-      id: doc._id,
+      id: doc._id.toString(),
       customer_id: doc.customer_id,
       amount: doc.amount / 100, // convert cents to dollars for the form
       status: narrowedStatus,
     };
-
     return invoice;
   } catch (error) {
     console.error('Database Error:', error);

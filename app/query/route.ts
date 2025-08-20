@@ -9,7 +9,7 @@ function getMongoConfig() {
   const DB_NAME = process.env.MONGODB_DB || 'nextjs_dashboard';
   
   if (!MONGODB_URI) {
-  throw new Error('MONGODB_URI environment variable is not set. Please set it in your local .env.local file for development, or in your deployment environment variables for production.');
+    throw new Error('MONGODB_URI is not set in .env.local');
   }
   
   return { MONGODB_URI, DB_NAME };

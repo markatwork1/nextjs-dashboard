@@ -1,6 +1,7 @@
 'use client';
 
 import { CustomerField, InvoiceForm } from '@/app/lib/definitions';
+import { updateInvoice } from '@/app/lib/actions';
 import {
   CheckIcon,
   ClockIcon,
@@ -13,13 +14,13 @@ import { Button } from '@/app/ui/button';
 export default function EditInvoiceForm({
   invoice,
   customers,
-}: {
-  invoice: InvoiceForm;
-  customers: CustomerField[];
-}) {
-  return (
-    <form>
-      <div className="rounded-md bg-gray-50 p-4 md:p-6">
+{
+  "_id": { "$oid": "3958dc9e742f437785e9fec4b6a6442a" },
+  "amount": 54246,
+  "customer_id": "3958dc9e-742f-4377-85e9-fec4b6a6442a",
+  "date": { "$date": "2023-07-16T00:00:00Z" },
+  "status": "pending"
+}
         {/* Customer Name */}
         <div className="mb-4">
           <label htmlFor="customer" className="mb-2 block text-sm font-medium">
