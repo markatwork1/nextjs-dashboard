@@ -1,3 +1,7 @@
+export const metadata = {
+  title: 'Customers',
+};
+
 export default function Page() {
-  return <p>Customers Page1111</p>;
+  return <p>Customers Page</p>;
 }

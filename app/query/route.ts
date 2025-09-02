@@ -40,7 +40,7 @@ async function listInvoices() {
   return db
     .collection('invoices')
     .aggregate([
-      { $match: { amount: 666 } },
+      { $match: { amount: 669 } },
       {
         $lookup: {
           from: 'customers',

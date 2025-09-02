@@ -1,3 +1,4 @@
+export const runtime = 'nodejs';
 // app/lib/data.ts
 import { MongoClient, Db } from 'mongodb';
 import {
@@ -290,26 +291,36 @@ import { ObjectId } from 'mongodb';
 export async function fetchInvoiceById(id: string): Promise<InvoiceForm | undefined> {
   try {
     const db = await getDb();
-    let doc = null;
+    let invoice: any = [];
     if (ObjectId.isValid(id)) {
-      doc = await db
-        .collection<{ _id: ObjectId; customer_id: string; amount: number; status: string }>('invoices')
-        .findOne({ _id: new ObjectId(id) }, { projection: { _id: 1, customer_id: 1, amount: 1, status: 1 } });
+      invoice = await db
+        .collection('invoices')
+        .aggregate([
+          { $match: { _id: new ObjectId(id) } },
+          { $limit: 1 },
+        ])
+        .toArray();
     } else {
-      doc = await db
-        .collection<{ _id: string; customer_id: string; amount: number; status: string }>('invoices')
-        .findOne({ _id: id }, { projection: { _id: 1, customer_id: 1, amount: 1, status: 1 } });
+      invoice = await db
+        .collection('invoices')
+        .aggregate([
+          { $match: { _id: id } },
+          { $limit: 1 },
+        ])
+        .toArray();
     }
-    if (!doc) return undefined;
+    console.log(invoice); // Invoice is an empty array []
+    if (!invoice[0]) return undefined;
+    const doc = invoice[0];
     const narrowedStatus: InvoiceForm['status'] =
       doc.status === 'paid' || doc.status === 'pending' ? doc.status : 'pending';
-    const invoice: InvoiceForm = {
+    const result: InvoiceForm = {
       id: doc._id.toString(),
       customer_id: doc.customer_id,
       amount: doc.amount / 100, // convert cents to dollars for the form
       status: narrowedStatus,
     };
-    return invoice;
+    return result;
   } catch (error) {
     console.error('Database Error:', error);
     throw new Error('Failed to fetch invoice.');

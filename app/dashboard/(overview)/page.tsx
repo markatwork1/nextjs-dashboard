@@ -5,12 +5,19 @@ import LatestInvoices from '@/app/ui/dashboard/latest-invoices';
 import { lusitana } from '@/app/ui/fonts';
 import { fetchCardData } from '@/app/lib/data';
 import { Suspense } from 'react';
-import { RevenueChartSkeleton, LatestInvoicesSkeleton, CardsSkeleton } from '@/app/ui/skeletons';
+import { RevenueChartSkeleton } from '@/app/ui/skeletons';
+import { getAuthUser } from '@/app/lib/auth-session';
 
-// Force dynamic rendering to prevent build-time data fetching
-export const dynamic = 'force-dynamic';
+export const metadata = {
+  title: 'Dashboard',
+};
 
 export default async function Page() {
+  const user = await getAuthUser();
+  if (!user) {
+    return Response.redirect(`/login?callbackUrl=${encodeURIComponent('/dashboard')}`);
+  }
+  
   const {
     numberOfInvoices,
     numberOfCustomers,
@@ -37,9 +44,7 @@ export default async function Page() {
           {/* Suspense boundary for revenue chart */}
           <RevenueChart />
         </Suspense>
-        <Suspense fallback={<LatestInvoicesSkeleton />}>
-          <LatestInvoices />
-        </Suspense>
+  <LatestInvoices />
       </div>
     </main>
   );
