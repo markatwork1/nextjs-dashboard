@@ -3,5 +3,5 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <p>Customers Page</p>;
+  return <h1>Customers</h1>;
 }

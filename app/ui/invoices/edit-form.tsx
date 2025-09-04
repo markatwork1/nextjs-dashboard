@@ -26,8 +26,18 @@ export default function EditInvoiceForm({
   const updateInvoiceWithId = (prevState: State, formData: FormData) =>
     updateInvoice(invoice.id, prevState, formData);
   const [state, formAction] = useActionState(updateInvoiceWithId, initialState);
+  const { useRouter } = require('next/navigation');
+  const router = useRouter();
+  const React = require('react');
+  const [submitted, setSubmitted] = React.useState(false);
+  React.useEffect(() => {
+    if (submitted && state?.message === null && Object.keys(state.errors ?? {}).length === 0) {
+      router.replace('/dashboard/invoices');
+    }
+  }, [state, router, submitted]);
+  const handleSubmit = () => setSubmitted(true);
   return (
-    <form action={formAction}>
+    <form action={formAction} onSubmit={handleSubmit}>
       <div className="rounded-md bg-gray-50 p-4 md:p-6">
         {/* Customer Name */}
         <div className="mb-4">
@@ -153,7 +163,7 @@ export default function EditInvoiceForm({
         >
           Cancel
         </Link>
-        <Button type="submit">Edit Invoice</Button>
+  <Button data-testid="update-invoice-submit" type="submit">Edit Invoice</Button>
       </div>
     </form>
   );

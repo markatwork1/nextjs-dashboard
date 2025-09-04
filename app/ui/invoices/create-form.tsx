@@ -18,9 +18,18 @@ type State = { message: string | null; errors: Record<string, string[]> };
 export default function Form({ customers }: { customers: CustomerField[] }) {
   const initialState: State = { message: null, errors: {} };
   const [state, formAction] = useActionState(createInvoice, initialState);
-
+  const { useRouter } = require('next/navigation');
+  const router = useRouter();
+  const React = require('react');
+  const [submitted, setSubmitted] = React.useState(false);
+  React.useEffect(() => {
+    if (submitted && state?.message === null && Object.keys(state.errors ?? {}).length === 0) {
+      router.replace('/dashboard/invoices');
+    }
+  }, [state, router, submitted]);
+  const handleSubmit = () => setSubmitted(true);
   return (
-    <form action={formAction}>
+    <form action={formAction} onSubmit={handleSubmit}>
       <div className="rounded-md bg-gray-50 p-4 md:p-6">
         {/* Customer Name */}
         <div className="mb-4">
@@ -143,7 +152,7 @@ export default function Form({ customers }: { customers: CustomerField[] }) {
         >
           Cancel
         </Link>
-        <Button type="submit">Create Invoice</Button>
+  <Button data-testid="create-invoice-submit" type="submit">Create Invoice</Button>
       </div>
     </form>
   );

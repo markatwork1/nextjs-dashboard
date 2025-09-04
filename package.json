@@ -2,7 +2,10 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "next dev --turbopack",
+  "dev": "next dev --turbopack",
+  "playwright:install": "npx playwright install --with-deps",
+  "test:e2e": "playwright test",
+  "test:e2e:headed": "playwright test --headed",
     "start": "next start",
     "lint": "next lint"
   },
@@ -32,6 +35,7 @@
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/jsonwebtoken": "^9.0.10",
+  "@playwright/test": "^1.41.2",
     "@types/node": "22.10.7",
     "@types/react": "19.0.7",
     "@types/react-dom": "19.0.3",
