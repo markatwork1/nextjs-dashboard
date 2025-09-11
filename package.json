@@ -2,12 +2,17 @@
   "private": true,
   "scripts": {
     "build": "next build",
-  "dev": "next dev --turbopack",
-  "playwright:install": "npx playwright install --with-deps",
-  "test:e2e": "playwright test",
-  "test:e2e:headed": "playwright test --headed",
+    "dev": "next dev --turbopack",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:all": "pnpm run test:unit && pnpm run test:e2e",
+  "test:api": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' mocha -r ts-node/register -r tests/api/setup.ts --timeout 10000 \"tests/api/**/*.spec.ts\"",
+    "playwright:install": "playwright install"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -17,7 +22,6 @@
     "bcryptjs": "^3.0.2",
     "clsx": "^2.1.1",
     "jsonwebtoken": "^9.0.2",
-  "jose": "^6.1.0",
     "mongodb": "^6.18.0",
     "mongosh": "^2.5.6",
     "next": "15.1.0",
@@ -33,14 +37,23 @@
     "zod": "^3.25.17"
   },
   "devDependencies": {
+    "@playwright/test": "^1.47.2",
     "@types/bcrypt": "^5.0.2",
+    "@types/chai": "^4.3.11",
     "@types/jsonwebtoken": "^9.0.10",
-  "@playwright/test": "^1.41.2",
+    "@types/mocha": "^10.0.6",
     "@types/node": "22.10.7",
     "@types/react": "19.0.7",
     "@types/react-dom": "19.0.3",
+    "@types/supertest": "^2.0.16",
+  "chai": "^4.3.10",
     "eslint": "^9.34.0",
-    "eslint-config-next": "15.5.0"
+    "eslint-config-next": "15.5.0",
+    "mocha": "^10.7.3",
+    "mongodb-memory-server": "^10.1.4",
+    "supertest": "^6.3.4",
+    "ts-node": "^10.9.2",
+    "vitest": "^2.0.5"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
