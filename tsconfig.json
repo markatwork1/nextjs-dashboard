@@ -25,12 +25,23 @@
   },
   "include": [
     "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "pages/**/*.ts",
+    "pages/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
     ".next/types/**/*.ts",
-    "app/lib/placeholder-data.ts",
-  "scripts/seed.js",
-  "tests/api/**/*.ts"
+    "middleware.ts",
+    "next.config.ts",
+    "scripts/**/*.ts",
+    "scripts/**/*.js"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "tests",
+    "playwright.config.ts",
+    "playwright-report",
+    "test-results"
+  ]
 }
